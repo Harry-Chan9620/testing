@@ -35,10 +35,6 @@ def print_schedule(individual):
     
     for day in sorted(day_assignments):
         print(f"Day {day}: {sorted(day_assignments[day])}")
-# Pareto Front Filtering
-# --------------------------
-# Corrected Functions
-# --------------------------
 
 # Update get_pareto_front to include customer_demands and daily_capacity
 def get_pareto_front(population, distance_matrix, n_days, customer_demands, daily_capacity):
