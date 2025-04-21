@@ -24,7 +24,7 @@ def vpr_file(filename):
             dy = all_points[i][1] - all_points[j][1]
             distance_matrix[i][j] = np.sqrt(dx**2 + dy**2)
     
-    return demands[1:], distance_matrix  # Exclude depot demand
+    return demands[1:], distance_matrix  # Exclude depot demand, remove [1:] to exclude depot resulting in 100 customers
 # Schedule Printing
 def print_schedule(individual):
     """Print customer assignments per day for an individual"""
@@ -36,14 +36,14 @@ def print_schedule(individual):
     for day in sorted(day_assignments):
         print(f"Day {day}: {sorted(day_assignments[day])}")
 
-# Update get_pareto_front to include customer_demands and daily_capacity
+# Updated version of get_pareto_front to include customer_demands and daily_capacity.
 def get_pareto_front(population, distance_matrix, n_days, customer_demands, daily_capacity):
     evaluations = [evaluate_individual(ind, distance_matrix, n_days, customer_demands, daily_capacity) 
                   for ind in population]
     fronts = non_dominated_sort(population, evaluations)
     return [population[i] for i in fronts[0]] if fronts else []
 
-# Modified Visualization
+# Visualization
 def plot_pareto_front(population, distance_matrix, n_days, customer_demands, daily_capacity):
     evaluations = [evaluate_individual(ind, distance_matrix, n_days, customer_demands, daily_capacity)
                   for ind in population]
