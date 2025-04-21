@@ -265,6 +265,20 @@ def print_schedule(individual, n_days):
     for cust_idx, days in enumerate(individual):
         for day in days:
             day_assignments[day].append(cust_idx + 1)  # Customers start at 1
+#--------------------Solution stats-------------------
+def print_solution_metrics(individual, distance_matrix, customer_demands, daily_capacity):
+    total_dist, max_dist = evaluate_individual(individual, distance_matrix, len(individual[0]), customer_demands, daily_capacity)
+    print(f"\nTotal Distance: {total_dist:.2f}")
+    print(f"Max Single-Day Distance: {max_dist:.2f}")
+    
+    day_demands = defaultdict(int)
+    for cust_idx, days in enumerate(individual):
+        for day in days:
+            day_demands[day] += customer_demands[cust_idx]
+    
+    for day in sorted(day_demands):
+        utilization = day_demands[day]/daily_capacity*100
+        print(f"Day {day}: Demand = {day_demands[day]}/{daily_capacity} ({utilization:.1f}%)")
     
     print(f"\nSchedule (Total Days: {n_days}):")
     for day in range(1, n_days + 1):
@@ -277,7 +291,7 @@ params = {
     'generations': 50,
     'mutation_rate': 0.1,
     'n_days': 10,
-    'daily_capacity': 200,
+    'daily_capacity': 100,
     'required_visits': [1] * 99,
     'allowable_days': [list(range(1, 11)) for _ in range(99)]
 }
@@ -291,9 +305,9 @@ final_population = nsga2(params, customer_demands, distance_matrix)
 #examples
 print("\nExample Schedules:")
 for idx in [0, len(final_population)//2, -1]:
-    print(f"\nSolution {idx+1}:")
-    print_schedule(final_population[idx], params['n_days'])  # Pass n_days
-
+    print(f"\n=== Solution {idx+1} ===")
+    print_schedule(final_population[idx], params['n_days'])
+    print_solution_metrics(final_population[idx], distance_matrix, customer_demands, params['daily_capacity'])
 # Plot Pareto front with all parameters
 plot_pareto_front(final_population, 
                  distance_matrix, 
