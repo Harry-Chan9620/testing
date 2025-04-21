@@ -3,46 +3,76 @@ import matplotlib.pyplot as plt
 import random
 from collections import defaultdict
 
-
-def parse_vpr_file(filename):
+def vpr_file(filename):
     with open(filename, 'r') as f:
         lines = [line.strip() for line in f.readlines() if line.strip()]
     
-    nodes = []
-    demands = []
-    
-    # Parse all nodes including depot
+    nodes, demands = [], []
     for line in lines:
         parts = list(map(int, line.split()))
-        x = parts[1]
-        y = parts[2]
-        demand = parts[3]
+        x, y, demand = parts[1], parts[2], parts[3]
         nodes.append((x, y))
         demands.append(demand)
     
-    # Separate depot (first node) and customers
-    depot = nodes[0]
-    customers = nodes[1:]  # All nodes after the first are customers
-    customer_demands = demands[1:]  # Exclude depot demand
-    
-    # Create distance matrix (depot + customers)
-    all_points = [depot] + customers
+    #Distance matrix
+    all_points = nodes
     n_points = len(all_points)
     distance_matrix = np.zeros((n_points, n_points))
-    
     for i in range(n_points):
         for j in range(n_points):
             dx = all_points[i][0] - all_points[j][0]
             dy = all_points[i][1] - all_points[j][1]
             distance_matrix[i][j] = np.sqrt(dx**2 + dy**2)
     
-    return customer_demands, distance_matrix
+    return demands[1:], distance_matrix  # Exclude depot demand
+# Schedule Printing
+def print_schedule(individual):
+    """Print customer assignments per day for an individual"""
+    day_assignments = defaultdict(list)
+    for cust_idx, days in enumerate(individual):
+        for day in days:
+            day_assignments[day].append(cust_idx + 1)  # Customers start at 1
+    
+    for day in sorted(day_assignments):
+        print(f"Day {day}: {sorted(day_assignments[day])}")
+# Pareto Front Filtering
+# --------------------------
+# Corrected Functions
+# --------------------------
 
-# Genetic Algorithm Components
+# Update get_pareto_front to include customer_demands and daily_capacity
+def get_pareto_front(population, distance_matrix, n_days, customer_demands, daily_capacity):
+    evaluations = [evaluate_individual(ind, distance_matrix, n_days, customer_demands, daily_capacity) 
+                  for ind in population]
+    fronts = non_dominated_sort(population, evaluations)
+    return [population[i] for i in fronts[0]] if fronts else []
+
+# Modified Visualization
+def plot_pareto_front(population, distance_matrix, n_days, customer_demands, daily_capacity):
+    evaluations = [evaluate_individual(ind, distance_matrix, n_days, customer_demands, daily_capacity)
+                  for ind in population]
+    
+    # Corrected call to get_pareto_front
+    pareto = get_pareto_front(population, distance_matrix, n_days, customer_demands, daily_capacity)
+    
+    # Corrected evaluation for pareto front
+    pareto_evals = [evaluate_individual(ind, distance_matrix, n_days, customer_demands, daily_capacity) 
+                   for ind in pareto]
+    
+    plt.scatter([e[0] for e in evaluations], [e[1] for e in evaluations],
+               alpha=0.3, label='All Solutions')
+    plt.scatter([e[0] for e in pareto_evals], [e[1] for e in pareto_evals],
+               c='red', label='Pareto Front')
+    plt.xlabel('Total Distance')
+    plt.ylabel('Max Single-Day Distance')
+    plt.title('Pareto Front with Solution Filtering')
+    plt.legend()
+    plt.show()
+
+# NSGA-II Components
 def generate_individual(required_visits, allowable_days):
     individual = []
     for visits, days in zip(required_visits, allowable_days):
-        # Choose distinct days from allowable days
         selected_days = np.random.choice(days, visits, replace=False)
         individual.append(sorted(selected_days.tolist()))
     return individual
@@ -56,37 +86,42 @@ def calculate_route_distance(route, distance_matrix):
     total += distance_matrix[route[-1]][0]
     return total
 
-def evaluate_individual(individual, distance_matrix, n_days):
+def evaluate_individual(individual, distance_matrix, n_days, customer_demands, daily_capacity):
     day_customers = defaultdict(list)
     total_distance = 0
-    max_daily = 0
+    max_single_day_distance = 0
+    valid = True  # Track constraint violations
     
-    # Customer indices now match distance_matrix[1..n]
+    # Assign customers to days and check capacity
     for cust_idx, days in enumerate(individual):
         for day in days:
-            day_customers[day].append(cust_idx + 1)  # +1 to skip depot
+            day_customers[day].append(cust_idx + 1)
     
-    for day in range(1, n_days+1):
-        customers = day_customers.get(day, [])
-        if not customers:
-            continue
-            
-        # Nearest neighbor heuristic
-        unvisited = set(customers)
-        route = []
-        current = 0  # depot
+    for day, customers in day_customers.items():
+        total_demand = sum(customer_demands[cust-1] for cust in customers)  # cust-1 for 0-based index
+        if total_demand > daily_capacity:
+            valid = False  # Penalize invalid solutions
         
+        # Route calculation (existing code)
+        route = []
+        current = 0
+        unvisited = set(customers)
         while unvisited:
             next_node = min(unvisited, key=lambda x: distance_matrix[current][x])
             route.append(next_node)
             unvisited.remove(next_node)
             current = next_node
-        
         day_distance = calculate_route_distance(route, distance_matrix)
         total_distance += day_distance
-        max_daily = max(max_daily, day_distance)
+        if day_distance > max_single_day_distance:
+            max_single_day_distance = day_distance
     
-    return total_distance, max_daily
+    # Penalize invalid solutions with high distances
+    if not valid:
+        total_distance *= 10
+        max_single_day_distance *= 10
+    
+    return total_distance, max_single_day_distance
 
 def dominates(a, b):
     return (a[0] <= b[0] and a[1] <= b[1]) and (a[0] < b[0] or a[1] < b[1])
@@ -104,12 +139,10 @@ def non_dominated_sort(population, evaluations):
                 dominated_by[i].append(j)
             elif dominates(b, a):
                 domination_counts[i] += 1
-                
         if domination_counts[i] == 0:
             fronts[0].append(i)
     
     current_front = 0
-    # Modified loop condition to prevent index errors
     while current_front < len(fronts) and fronts[current_front]:
         next_front = []
         for i in fronts[current_front]:
@@ -117,7 +150,6 @@ def non_dominated_sort(population, evaluations):
                 domination_counts[j] -= 1
                 if domination_counts[j] == 0:
                     next_front.append(j)
-        
         if next_front:
             fronts.append(next_front)
         current_front += 1
@@ -129,29 +161,21 @@ def crowding_distance(evaluations):
     distances = [0.0] * n
     
     if n <= 2:
-        return [float('inf')]*n if n > 0 else []
+        return [float('inf')] * n
     
     for m in range(2):
-        # Sort indices based on objective m
         sorted_indices = sorted(range(n), key=lambda i: evaluations[i][m])
+        min_val = evaluations[sorted_indices[0]][m]
+        max_val = evaluations[sorted_indices[-1]][m]
+        if max_val == min_val:
+            continue
         
-        # Set boundary points to infinity
         distances[sorted_indices[0]] = float('inf')
         distances[sorted_indices[-1]] = float('inf')
-        
-        # Skip if all values are equal
-        if evaluations[sorted_indices[-1]][m] == evaluations[sorted_indices[0]][m]:
-            continue
-            
-        # Normalization factor
-        norm = evaluations[sorted_indices[-1]][m] - evaluations[sorted_indices[0]][m]
-        
-        # Update middle points
         for i in range(1, n-1):
             distances[sorted_indices[i]] += (
-                evaluations[sorted_indices[i+1]][m] - 
-                evaluations[sorted_indices[i-1]][m]
-            ) / norm
+                evaluations[sorted_indices[i+1]][m] - evaluations[sorted_indices[i-1]][m]
+            ) / (max_val - min_val)
     
     return distances
 
@@ -163,14 +187,11 @@ def crossover(parent1, parent2, n_days):
             new_days = p1.copy()
         else:
             new_days = p2.copy()
-        
         if len(set(new_days)) < len(new_days):
             unique = list(set(new_days))
-            missing = len(new_days) - len(unique)
             available = list(set(range(1, n_days+1)) - set(unique))
-            unique += np.random.choice(available, missing, replace=False).tolist()
-            new_days = sorted(unique)
-        
+            np.random.shuffle(available)
+            new_days = sorted(unique + available[:len(new_days)-len(unique)])
         child.append(new_days)
     return child
 
@@ -185,86 +206,101 @@ def mutate(individual, mutation_rate, n_days):
                 individual[i] = sorted(days)
     return individual
 
-# NSGA-II Implementation
-def nsga2(params):
-    demands, distance_matrix = parse_vpr_file(params['filename'])
+# NSGA-II Algorithm
+def nsga2(params, customer_demands, distance_matrix):
     n_days = params['n_days']
     required_visits = params['required_visits']
     allowable_days = params['allowable_days']
+    daily_capacity = params['daily_capacity']
     
     population = [generate_individual(required_visits, allowable_days) 
-                for _ in range(params['population_size'])]
-    
-    archive = []
+                  for _ in range(params['population_size'])]
     
     for gen in range(params['generations']):
-        evaluations = [evaluate_individual(ind, distance_matrix, n_days) 
-                      for ind in population]
+        evaluations = [evaluate_individual(ind, distance_matrix, n_days, customer_demands, daily_capacity)
+                       for ind in population]
         
-        # Update archive
-        combined = population + archive
-        combined_evals = evaluations + [evaluate_individual(ind, distance_matrix, n_days) 
-                                       for ind in archive]
+        offspring = []
+        for _ in range(params['population_size']):
+            candidates = random.sample(range(len(population)), 2)
+            a, b = candidates[0], candidates[1]
+            winner = population[a] if (evaluations[a][0] + evaluations[a][1] < evaluations[b][0] + evaluations[b][1]) else population[b]
+            offspring.append(winner)
+        
+        # Generate children
+        children = []
+        for i in range(0, len(offspring), 2):
+            p1, p2 = offspring[i], offspring[i+1] if i+1 < len(offspring) else offspring[i]
+            children.append(mutate(crossover(p1, p2, n_days), params['mutation_rate'], n_days))
+        
+        # Combine and select next population
+        combined = population + children
+        combined_evals = [evaluate_individual(ind, distance_matrix, n_days, customer_demands, daily_capacity)
+                          for ind in combined]
+        
         fronts = non_dominated_sort(combined, combined_evals)
+        next_population = []
+        remaining = params['population_size']
         
-        new_archive = []
         for front in fronts:
             front_inds = [combined[i] for i in front]
             front_evals = [combined_evals[i] for i in front]
             
-            if len(new_archive) + len(front_inds) <= params['archive_size']:
-                new_archive.extend(front_inds)
+            if len(next_population) + len(front_inds) <= remaining:
+                next_population.extend(front_inds)
+                remaining -= len(front_inds)
             else:
                 distances = crowding_distance(front_evals)
-                sorted_front = sorted(zip(front_inds, distances), 
-                                    key=lambda x: -x[1])
-                needed = params['archive_size'] - len(new_archive)
-                new_archive.extend([x[0] for x in sorted_front[:needed]])
+                sorted_front = sorted(zip(front_inds, distances), key=lambda x: -x[1])
+                next_population.extend([ind for ind, _ in sorted_front[:remaining]])
                 break
         
-        archive = new_archive
-        
-        # Selection and reproduction
-        parents = random.choices(population, k=params['population_size'])
-        offspring = []
-        
-        for _ in range(params['population_size'] // 2):
-            p1, p2 = random.sample(parents, 2)
-            child = crossover(p1, p2, n_days)
-            child = mutate(child, params['mutation_rate'], n_days)
-            offspring.append(child)
-        
-        population = parents + offspring
+        population = next_population[:params['population_size']]
     
-    return archive
-
-# Visualization
-def plot_pareto_front(archive, distance_matrix, n_days):
-    evaluations = [evaluate_individual(ind, distance_matrix, n_days) for ind in archive]
-    x = [e[0] for e in evaluations]
-    y = [e[1] for e in evaluations]
+    return population
+def print_customer_demands(customer_demands):
+    """Print customer IDs and their demands"""
+    print("\nCustomer Demands:")
+    for cust_id, demand in enumerate(customer_demands, start=1):  # Customers start at 1
+        print(f"Customer {cust_id}: Demand = {demand}")
+def print_schedule(individual, n_days):
+    """Print customer assignments per day, including empty days"""
+    day_assignments = defaultdict(list)
+    for cust_idx, days in enumerate(individual):
+        for day in days:
+            day_assignments[day].append(cust_idx + 1)  # Customers start at 1
     
-    plt.scatter(x, y)
-    plt.xlabel('Total Distance')
-    plt.ylabel('Max Daily Distance')
-    plt.title('Pareto Front')
-    plt.show()
-
-# Parameters and Execution
-# Parameters and Execution
+    print(f"\nSchedule (Total Days: {n_days}):")
+    for day in range(1, n_days + 1):
+        customers = sorted(day_assignments.get(day, []))
+        print(f"Day {day}: Customers {customers}")
+# Execution
 params = {
     'filename': 'vrp10.txt',
     'population_size': 100,
     'generations': 50,
     'mutation_rate': 0.1,
-    'archive_size': 100,
     'n_days': 10,
-    'required_visits': [1] * 99,  # 99 customers (nodes 2-100)
-    'allowable_days': [list(range(1, 6)) for _ in range(99)]
+    'daily_capacity': 200,
+    'required_visits': [1] * 99,
+    'allowable_days': [list(range(1, 11)) for _ in range(99)]
 }
 
-archive = nsga2(params)
-demands, distance_matrix = parse_vpr_file(params['filename'])  # Only 2 values now
-n_days = params['n_days']  # Get from parameters
+# Parse data once and reuse
+customer_demands, distance_matrix = vpr_file(params['filename'])
+print_customer_demands(customer_demands)
 
-plot_pareto_front(archive, distance_matrix, n_days)
+# Run NSGA-II with parameters
+final_population = nsga2(params, customer_demands, distance_matrix)
+#examples
+print("\nExample Schedules:")
+for idx in [0, len(final_population)//2, -1]:
+    print(f"\nSolution {idx+1}:")
+    print_schedule(final_population[idx], params['n_days'])  # Pass n_days
+
+# Plot Pareto front with all parameters
+plot_pareto_front(final_population, 
+                 distance_matrix, 
+                 params['n_days'],
+                 customer_demands,
+                 params['daily_capacity'])
