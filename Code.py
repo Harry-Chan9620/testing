@@ -25,17 +25,6 @@ def vpr_file(filename):
             distance_matrix[i][j] = np.sqrt(dx**2 + dy**2)
     
     return demands[1:], distance_matrix  # Exclude depot demand, remove [1:] to exclude depot resulting in 100 customers
-# Schedule Printing
-def print_schedule(individual):
-    """Print customer assignments per day for an individual"""
-    day_assignments = defaultdict(list)
-    for cust_idx, days in enumerate(individual):
-        for day in days:
-            day_assignments[day].append(cust_idx + 1)  # Customers start at 1
-    
-    for day in sorted(day_assignments):
-        print(f"Day {day}: {sorted(day_assignments[day])}")
-
 # Updated version of get_pareto_front to include customer_demands and daily_capacity.
 def get_pareto_front(population, distance_matrix, n_days, customer_demands, daily_capacity):
     evaluations = [evaluate_individual(ind, distance_matrix, n_days, customer_demands, daily_capacity) 
@@ -84,9 +73,10 @@ def calculate_route_distance(route, distance_matrix):
 
 def evaluate_individual(individual, distance_matrix, n_days, customer_demands, daily_capacity):
     day_customers = defaultdict(list)
+    day_demands = defaultdict(int)
     total_distance = 0
     max_single_day_distance = 0
-    valid = True  # Track constraint violations
+    valid = True # feasibility.
     
     # Assign customers to days and check capacity
     for cust_idx, days in enumerate(individual):
@@ -265,25 +255,27 @@ def print_schedule(individual, n_days):
     for cust_idx, days in enumerate(individual):
         for day in days:
             day_assignments[day].append(cust_idx + 1)  # Customers start at 1
-#--------------------Solution stats-------------------
-def print_solution_metrics(individual, distance_matrix, customer_demands, daily_capacity):
-    total_dist, max_dist = evaluate_individual(individual, distance_matrix, len(individual[0]), customer_demands, daily_capacity)
-    print(f"\nTotal Distance: {total_dist:.2f}")
-    print(f"Max Single-Day Distance: {max_dist:.2f}")
-    
-    day_demands = defaultdict(int)
-    for cust_idx, days in enumerate(individual):
-        for day in days:
-            day_demands[day] += customer_demands[cust_idx]
-    
-    for day in sorted(day_demands):
-        utilization = day_demands[day]/daily_capacity*100
-        print(f"Day {day}: Demand = {day_demands[day]}/{daily_capacity} ({utilization:.1f}%)")
     
     print(f"\nSchedule (Total Days: {n_days}):")
     for day in range(1, n_days + 1):
         customers = sorted(day_assignments.get(day, []))
         print(f"Day {day}: Customers {customers}")
+#--------------------Solution stats-------------------
+def print_solution_metrics(individual, distance_matrix, customer_demands, daily_capacity, n_days):
+    total_dist, max_dist = evaluate_individual(individual, distance_matrix, n_days, customer_demands, daily_capacity)
+    print(f"\nTotal Distance: {total_dist:.2f}")
+    print(f"Max Single-Day Distance: {max_dist:.2f}")
+    
+    day_demands = defaultdict(int)
+    day_assignments = defaultdict(list)
+    for cust_idx, days in enumerate(individual):
+        for day in days:
+            day_demands[day] += customer_demands[cust_idx]
+            day_assignments[day].append(cust_idx + 1)
+    
+    for day in sorted(day_demands):
+        utilization = day_demands[day]/daily_capacity*100
+        print(f"Day {day}: Demand = {day_demands[day]}/{daily_capacity} ({utilization:.1f}%)")
 # Execution
 params = {
     'filename': 'vrp10.txt',
@@ -307,7 +299,7 @@ print("\nExample Schedules:")
 for idx in [0, len(final_population)//2, -1]:
     print(f"\n=== Solution {idx+1} ===")
     print_schedule(final_population[idx], params['n_days'])
-    print_solution_metrics(final_population[idx], distance_matrix, customer_demands, params['daily_capacity'])
+    print_solution_metrics(final_population[idx], distance_matrix, customer_demands, params['daily_capacity'], params['n_days'])
 # Plot Pareto front with all parameters
 plot_pareto_front(final_population, 
                  distance_matrix, 
