@@ -25,7 +25,7 @@ def vpr_file(filename):
             distance_matrix[i][j] = np.sqrt(dx**2 + dy**2)
     
     return demands[1:], distance_matrix  # Exclude depot demand, remove [1:] to exclude depot resulting in 100 customers
-# Updated version of get_pareto_front to include customer_demands and daily_capacity.
+# get_pareto_front to include customer_demands and daily_capacity.
 def get_pareto_front(population, distance_matrix, n_days, customer_demands, daily_capacity):
     evaluations = [evaluate_individual(ind, distance_matrix, n_days, customer_demands, daily_capacity) 
                   for ind in population]
@@ -37,10 +37,10 @@ def plot_pareto_front(population, distance_matrix, n_days, customer_demands, dai
     evaluations = [evaluate_individual(ind, distance_matrix, n_days, customer_demands, daily_capacity)
                   for ind in population]
     
-    # Corrected call to get_pareto_front
+
     pareto = get_pareto_front(population, distance_matrix, n_days, customer_demands, daily_capacity)
     
-    # Corrected evaluation for pareto front
+
     pareto_evals = [evaluate_individual(ind, distance_matrix, n_days, customer_demands, daily_capacity) 
                    for ind in pareto]
     
@@ -74,21 +74,25 @@ def calculate_route_distance(route, distance_matrix):
 def evaluate_individual(individual, distance_matrix, n_days, customer_demands, daily_capacity):
     day_customers = defaultdict(list)
     day_demands = defaultdict(int)
-    total_distance = 0
-    max_single_day_distance = 0
-    valid = True # feasibility.
+    valid = True
     
-    # Assign customers to days and check capacity
+    # First pass: check capacity constraints
     for cust_idx, days in enumerate(individual):
         for day in days:
+            day_demands[day] += customer_demands[cust_idx]
             day_customers[day].append(cust_idx + 1)
+            if day_demands[day] > daily_capacity:
+                valid = False
+                break
     
+    # Immediately reject invalid solutions
+    if not valid:
+        return (float('inf'), float('inf'))  # STRICT PENALTY
+    
+    # Second pass: calculate distances
+    total_distance = 0
+    max_single_day_distance = 0
     for day, customers in day_customers.items():
-        total_demand = sum(customer_demands[cust-1] for cust in customers)  # cust-1 for 0-based index
-        if total_demand > daily_capacity:
-            valid = False  # Penalize invalid solutions
-        
-        # Route calculation (existing code)
         route = []
         current = 0
         unvisited = set(customers)
@@ -99,13 +103,7 @@ def evaluate_individual(individual, distance_matrix, n_days, customer_demands, d
             current = next_node
         day_distance = calculate_route_distance(route, distance_matrix)
         total_distance += day_distance
-        if day_distance > max_single_day_distance:
-            max_single_day_distance = day_distance
-    
-    # Penalize invalid solutions with high distances
-    if not valid:
-        total_distance *= 10
-        max_single_day_distance *= 10
+        max_single_day_distance = max(max_single_day_distance, day_distance)
     
     return total_distance, max_single_day_distance
 
@@ -183,13 +181,23 @@ def crossover(parent1, parent2, n_days):
 
 def mutate(individual, mutation_rate, n_days):
     for i in range(len(individual)):
+        # Skip empty day lists to prevent errors
+        if not individual[i]:  # Safety check 
+            continue
+            
         if random.random() < mutation_rate:
             days = individual[i].copy()
+            # Prevent index error if days empty
+            if not days:  #check
+                continue
+                
             idx = random.randint(0, len(days)-1)
             available = list(set(range(1, n_days+1)) - set(days))
+            
             if available:
                 days[idx] = random.choice(available)
                 individual[i] = sorted(days)
+    
     return individual
 
 # NSGA-II Algorithm
@@ -263,19 +271,21 @@ def print_schedule(individual, n_days):
 #--------------------Solution stats-------------------
 def print_solution_metrics(individual, distance_matrix, customer_demands, daily_capacity, n_days):
     total_dist, max_dist = evaluate_individual(individual, distance_matrix, n_days, customer_demands, daily_capacity)
-    print(f"\nTotal Distance: {total_dist:.2f}")
+    valid = total_dist != float('inf')
+    
+    print(f"\n=== Solution {'VALID' if valid else 'INVALID'} ===")
+    print(f"Total Distance: {total_dist:.2f}")
     print(f"Max Single-Day Distance: {max_dist:.2f}")
     
-    day_demands = defaultdict(int)
-    day_assignments = defaultdict(list)
-    for cust_idx, days in enumerate(individual):
-        for day in days:
-            day_demands[day] += customer_demands[cust_idx]
-            day_assignments[day].append(cust_idx + 1)
-    
-    for day in sorted(day_demands):
-        utilization = day_demands[day]/daily_capacity*100
-        print(f"Day {day}: Demand = {day_demands[day]}/{daily_capacity} ({utilization:.1f}%)")
+    if valid:
+        day_assignments = defaultdict(list)
+        for cust_idx, days in enumerate(individual):
+            for day in days:
+                day_assignments[day].append(cust_idx + 1)
+        
+        for day in sorted(day_assignments):
+            demand = sum(customer_demands[cust-1] for cust in day_assignments[day])
+            print(f"Day {day}: {len(day_assignments[day])} customers | Demand: {demand}/{daily_capacity}")
 # Execution
 params = {
     'filename': 'vrp10.txt',
@@ -283,7 +293,7 @@ params = {
     'generations': 50,
     'mutation_rate': 0.1,
     'n_days': 10,
-    'daily_capacity': 100,
+    'daily_capacity': 300,
     'required_visits': [1] * 99,
     'allowable_days': [list(range(1, 11)) for _ in range(99)]
 }
