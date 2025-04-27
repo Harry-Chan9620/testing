@@ -87,7 +87,7 @@ def evaluate_individual(individual, distance_matrix, n_days, customer_demands, d
     
     # Immediately reject invalid solutions
     if not valid:
-        return (float('inf'), float('inf'))  # STRICT PENALTY
+        return (float('inf'), float('inf'))  #PENALTY if not valid
     
     # Second pass: calculate distances
     total_distance = 0
@@ -210,6 +210,40 @@ def nsga2(params, customer_demands, distance_matrix):
     population = [generate_individual(required_visits, allowable_days) 
                   for _ in range(params['population_size'])]
     
+    # Setup plots
+    plt.figure(figsize=(10, 6))
+    axis = plt.gca()
+    plt.xlabel('Total Distance')
+    plt.ylabel('Max Single-Day Distance')
+    plt.title('Pareto Front Evolution')
+    
+    all_fronts = []
+
+    def update(gen):
+        axis.clear()
+        axis.set_xlabel('Total Distance')
+        axis.set_ylabel('Max Single-Day Distance')
+        axis.set_title(f'Generation {gen+1}/{params["generations"]}')
+        
+        # Plot historical fronts with best solution every 5 stesp
+        for i, front in enumerate(all_fronts):
+            axis.scatter([e[0] for e in front], [e[1] for e in front],
+                      c='blue', alpha=(i+1)/len(all_fronts)*0.5, 
+                      edgecolors='none', s=15)
+            
+        # Plot current front
+        current_front = get_pareto_front(population, distance_matrix, n_days,
+                                        customer_demands, daily_capacity)
+        current_evals = [evaluate_individual(ind, distance_matrix, n_days,
+                                            customer_demands, daily_capacity)
+                        for ind in current_front]
+        axis.scatter([data[0] for data in current_evals], [data[1] for data in current_evals],
+                  c='red', label='Current Front', s=30)
+        
+        axis.legend()
+        plt.draw()
+
+    
     for gen in range(params['generations']):
         evaluations = [evaluate_individual(ind, distance_matrix, n_days, customer_demands, daily_capacity)
                        for ind in population]
@@ -250,6 +284,22 @@ def nsga2(params, customer_demands, distance_matrix):
                 break
         
         population = next_population[:params['population_size']]
+        current_front = get_pareto_front(population, distance_matrix, n_days,
+                                        customer_demands, daily_capacity)
+        current_evals = [evaluate_individual(ind, distance_matrix, n_days,
+                                            customer_demands, daily_capacity)
+                        for ind in current_front]
+        all_fronts.append(current_evals)
+        
+        # Update plot every N generations
+        if gen % 5 == 0:  # Plot every 5 generations
+            update(gen)
+            plt.pause(0.5)  # Pause to see updates
+    
+    # Final plot
+    update(params['generations']-1)
+    plt.show()
+    return population        
     
     return population
 def print_customer_demands(customer_demands):
@@ -293,7 +343,7 @@ params = {
     'generations': 50,
     'mutation_rate': 0.1,
     'n_days': 10,
-    'daily_capacity': 300,
+    'daily_capacity': 200,
     'required_visits': [1] * 99,
     'allowable_days': [list(range(1, 11)) for _ in range(99)]
 }
