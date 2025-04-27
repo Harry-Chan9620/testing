@@ -2,10 +2,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 import random
 from collections import defaultdict
+import pandas as pd
 #For Consistent reproducible results
 random.seed(5)
 np.random.seed(5)
-
+save_file = False
 def vpr_file(filename): #reads data from file and extracts nodes [idx,x,y,demand] for distance matrix
     with open(filename, 'r') as f:
         lines = [line.strip() for line in f.readlines() if line.strip()]
@@ -204,6 +205,8 @@ def nsga2(params, customer_demands, distance_matrix):
     required_visits = params['required_visits']
     allowable_days = params['allowable_days']
     daily_capacity = params['daily_capacity']
+    data_collection = []
+    
     
     population = [generate_individual(required_visits, allowable_days) 
                   for _ in range(params['population_size'])]
@@ -253,7 +256,7 @@ def nsga2(params, customer_demands, distance_matrix):
             c='red', s=30, label='Current Pareto Front'
         )
         
-        # Ensure labels are unique
+        # Ensures labels are unique
         handles, labels = plt.gca().get_legend_handles_labels()
         by_label = dict(zip(labels, handles))
         axis.legend(by_label.values(), by_label.keys())
@@ -263,7 +266,18 @@ def nsga2(params, customer_demands, distance_matrix):
     
     for gen in range(params['generations']):
         evaluations = [evaluate_individual(ind, distance_matrix, n_days, customer_demands, daily_capacity, allowable_days)
-               for ind in population]
+                      for ind in population]
+                # Track current generation's data
+        for ind, eval_result in zip(population, evaluations):
+            total_dist, max_dist = eval_result
+            valid = (total_dist != float('inf') and max_dist != float('inf'))
+            data_collection.append({
+                'generation': gen,
+                'total_distance': total_dist,
+                'max_daily_distance': max_dist,
+                'valid': valid,
+                'solution': ind  # Optional: store the actual solution
+            })
         
         offspring = []
         for _ in range(params['population_size']):
@@ -316,6 +330,10 @@ def nsga2(params, customer_demands, distance_matrix):
     # Final plot
     update(params['generations']-1)
     plt.show()
+    if save_file == True:
+        df = pd.DataFrame(data_collection)
+        df.to_csv('moga_results.csv', index=False)
+        
     return population        
 
 def print_customer_demands(customer_demands):
