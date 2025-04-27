@@ -221,6 +221,7 @@ def nsga2(params, customer_demands, distance_matrix):
     all_fronts = []
     all_evaluations = []  # Track all evaluations across generations
 
+
     def update(gen):
         axis.clear()
         axis.set_xlabel('Total Distance')
@@ -334,8 +335,24 @@ def nsga2(params, customer_demands, distance_matrix):
         df = pd.DataFrame(data_collection)
         df.to_csv('moga_results.csv', index=False)
         
-    return population        
-
+    return population, all_fronts, data_collection         
+#HyperVolume
+def calculate_hypervolume(pareto_front, ref_point):
+    """Calculate hypervolume for a 2D Pareto front relative to a reference point."""
+    if not pareto_front:
+        return 0.0
+    # Sort Pareto front by the first objective (total distance)
+    sorted_front = sorted(pareto_front, key=lambda x: x[0])
+    ref_x, ref_y = ref_point
+    hypervolume = 0.0
+    n = len(sorted_front)
+    for i in range(n):
+        x_i, y_i = sorted_front[i]
+        # Next point's x or reference x if last point
+        x_next = sorted_front[i+1][0] if i < n-1 else ref_x
+        contribution = (x_next - x_i) * (ref_y - y_i)
+        hypervolume += contribution
+    return hypervolume  
 def print_customer_demands(customer_demands):
     """Print customer IDs and their demands"""
     print("\nCustomer Demands:")
@@ -387,7 +404,35 @@ customer_demands, distance_matrix = vpr_file(params['filename'])
 print_customer_demands(customer_demands)
 
 # Run NSGA-II with parameters
-final_population = nsga2(params, customer_demands, distance_matrix)
+final_population, all_fronts, data_collection = nsga2(params, customer_demands, distance_matrix)
+# Compute hypervolume for each generation
+valid_evaluations = [(e['total_distance'], e['max_daily_distance']) for e in data_collection if e['valid']]
+if valid_evaluations:
+    max_total = max(e[0] for e in valid_evaluations)
+    max_daily = max(e[1] for e in valid_evaluations)
+    ref_point = (max_total * 1.1, max_daily * 1.1)
+    hypervolumes = []
+    for front in all_fronts:
+        valid_front = [(e[0], e[1]) for e in front if e[0] != float('inf') and e[1] != float('inf')]
+        hv = calculate_hypervolume(valid_front, ref_point)
+        hypervolumes.append(hv)
+    
+    # Plot hypervolume progression
+    plt.figure(figsize=(10, 5))
+    plt.plot(hypervolumes, marker='o', linestyle='-')
+    plt.xlabel('Generation')
+    plt.ylabel('Hypervolume')
+    plt.title('Hypervolume Progression Across Generations')
+    plt.grid(True)
+    plt.show()
+    
+    # Print hypervolumes
+    print("\nHypervolume per Generation:")
+    for gen, hv in enumerate(hypervolumes):
+        print(f"Generation {gen+1}: {hv:.2f}")
+else:
+    print("No valid solutions to compute hypervolume.")
+
 #examples
 print("\nExample Schedules:")
 for idx in [0, len(final_population)//2, -1]:
@@ -401,3 +446,19 @@ plot_pareto_front(final_population,
                  customer_demands,
                  params['daily_capacity'],
                  params['allowable_days'])
+valid_data = [entry for entry in data_collection if entry['valid']]
+first_valid = next((entry for entry in valid_data if entry['generation'] == 0), None)
+if first_valid:
+    print(f"\nGeneration 0 Example Solution:")
+    print(f"Total Distance: {first_valid['total_distance']:.2f}")
+    print(f"Max Daily Distance: {first_valid['max_daily_distance']:.2f}")
+    print("\nHypervolume Summary:")
+    print(f"Generation 0 (Initial): {hypervolumes[0]:.2f}")
+    print(f"Generation {params['generations']} (Final): {hypervolumes[-1]:.2f}")
+
+# Get the last valid solution (Gen 50)
+last_valid = next((entry for entry in valid_data if entry['generation'] == params['generations'] - 1), None)
+if last_valid:
+    print(f"\nGeneration {params['generations']} Example Solution:")
+    print(f"Total Distance: {last_valid['total_distance']:.2f}")
+    print(f"Max Daily Distance: {last_valid['max_daily_distance']:.2f}")
