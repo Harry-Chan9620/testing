@@ -2,8 +2,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 import random
 from collections import defaultdict
+#For Consistent reproducible results
+random.seed(5)
+np.random.seed(5)
 
-def vpr_file(filename):
+def vpr_file(filename): #reads data from file and extracts nodes [idx,x,y,demand] for distance matrix
     with open(filename, 'r') as f:
         lines = [line.strip() for line in f.readlines() if line.strip()]
     
@@ -26,28 +29,20 @@ def vpr_file(filename):
     
     return demands[1:], distance_matrix  # Exclude depot demand, remove [1:] to exclude depot resulting in 100 customers
 # get_pareto_front to include customer_demands and daily_capacity.
-def get_pareto_front(population, distance_matrix, n_days, customer_demands, daily_capacity):
-    evaluations = [evaluate_individual(ind, distance_matrix, n_days, customer_demands, daily_capacity) 
+def get_pareto_front(population, distance_matrix, n_days, customer_demands, daily_capacity, allowable_days):
+    evaluations = [evaluate_individual(ind, distance_matrix, n_days, customer_demands, daily_capacity, allowable_days) 
                   for ind in population]
     fronts = non_dominated_sort(population, evaluations)
     return [population[i] for i in fronts[0]] if fronts else []
 
-# Visualization
-def plot_pareto_front(population, distance_matrix, n_days, customer_demands, daily_capacity):
-    evaluations = [evaluate_individual(ind, distance_matrix, n_days, customer_demands, daily_capacity)
+def plot_pareto_front(population, distance_matrix, n_days, customer_demands, daily_capacity, allowable_days):
+    evaluations = [evaluate_individual(ind, distance_matrix, n_days, customer_demands, daily_capacity, allowable_days)
                   for ind in population]
-    
-
-    pareto = get_pareto_front(population, distance_matrix, n_days, customer_demands, daily_capacity)
-    
-
-    pareto_evals = [evaluate_individual(ind, distance_matrix, n_days, customer_demands, daily_capacity) 
+    pareto = get_pareto_front(population, distance_matrix, n_days, customer_demands, daily_capacity, allowable_days)
+    pareto_evals = [evaluate_individual(ind, distance_matrix, n_days, customer_demands, daily_capacity, allowable_days)
                    for ind in pareto]
-    
-    plt.scatter([e[0] for e in evaluations], [e[1] for e in evaluations],
-               alpha=0.3, label='All Solutions')
-    plt.scatter([e[0] for e in pareto_evals], [e[1] for e in pareto_evals],
-               c='red', label='Pareto Front')
+    plt.scatter([e[0] for e in evaluations], [e[1] for e in evaluations], alpha=0.3, label='All Solutions')
+    plt.scatter([e[0] for e in pareto_evals], [e[1] for e in pareto_evals], c='red', label='Pareto Front')
     plt.xlabel('Total Distance')
     plt.ylabel('Max Single-Day Distance')
     plt.title('Pareto Front with Solution Filtering')
@@ -63,6 +58,7 @@ def generate_individual(required_visits, allowable_days):
     return individual
 
 def calculate_route_distance(route, distance_matrix):
+#calulates the distance for starting and ending at depot which index 0 is used.
     if not route:
         return 0.0
     total = distance_matrix[0][route[0]]
@@ -71,23 +67,32 @@ def calculate_route_distance(route, distance_matrix):
     total += distance_matrix[route[-1]][0]
     return total
 
-def evaluate_individual(individual, distance_matrix, n_days, customer_demands, daily_capacity):
+def evaluate_individual(individual, distance_matrix, n_days, customer_demands, daily_capacity, allowable_days):
     day_customers = defaultdict(list)
     day_demands = defaultdict(int)
     valid = True
     
     # First pass: check capacity constraints
+    valid = True
     for cust_idx, days in enumerate(individual):
+        # Check 1: Are all assigned days within allowable_days?
+        if not set(days).issubset(set(allowable_days[cust_idx])):
+            valid = False
+            break  # Exit immediately if invalid
+
+        # Check 2: Does the assignment violate daily capacity?
         for day in days:
             day_demands[day] += customer_demands[cust_idx]
             day_customers[day].append(cust_idx + 1)
             if day_demands[day] > daily_capacity:
                 valid = False
-                break
+                break  # Exit day loop if capacity exceeded
+        if not valid:
+            break  # Exit customer loop if any violation
     
     # Immediately reject invalid solutions
     if not valid:
-        return (float('inf'), float('inf'))  #PENALTY if not valid
+        return (float('inf'), float('inf'))  #PENALTY if solution is not valid where demand is greater than daily capacity
     
     # Second pass: calculate distances
     total_distance = 0
@@ -179,25 +184,18 @@ def crossover(parent1, parent2, n_days):
         child.append(new_days)
     return child
 
-def mutate(individual, mutation_rate, n_days):
+def mutate(individual, mutation_rate, n_days, allowable_days):
     for i in range(len(individual)):
-        # Skip empty day lists to prevent errors
-        if not individual[i]:  # Safety check 
+        if not individual[i]:
             continue
-            
         if random.random() < mutation_rate:
             days = individual[i].copy()
-            # Prevent index error if days empty
-            if not days:  #check
-                continue
-                
             idx = random.randint(0, len(days)-1)
-            available = list(set(range(1, n_days+1)) - set(days))
-            
+            # Use allowable_days[i], not all days
+            available = list(set(allowable_days[i]) - set(days))
             if available:
                 days[idx] = random.choice(available)
                 individual[i] = sorted(days)
-    
     return individual
 
 # NSGA-II Algorithm
@@ -218,6 +216,7 @@ def nsga2(params, customer_demands, distance_matrix):
     plt.title('Pareto Front Evolution')
     
     all_fronts = []
+    all_evaluations = []  # Track all evaluations across generations
 
     def update(gen):
         axis.clear()
@@ -225,28 +224,46 @@ def nsga2(params, customer_demands, distance_matrix):
         axis.set_ylabel('Max Single-Day Distance')
         axis.set_title(f'Generation {gen+1}/{params["generations"]}')
         
-        # Plot historical fronts with best solution every 5 stesp
-        for i, front in enumerate(all_fronts):
-            axis.scatter([e[0] for e in front], [e[1] for e in front],
-                      c='blue', alpha=(i+1)/len(all_fronts)*0.5, 
-                      edgecolors='none', s=15)
-            
-        # Plot current front
-        current_front = get_pareto_front(population, distance_matrix, n_days,
-                                        customer_demands, daily_capacity)
-        current_evals = [evaluate_individual(ind, distance_matrix, n_days,
-                                            customer_demands, daily_capacity)
-                        for ind in current_front]
-        axis.scatter([data[0] for data in current_evals], [data[1] for data in current_evals],
-                  c='red', label='Current Front', s=30)
+        # Plot all evaluations (including dominated) with filtering for valid solutions
+        if all_evaluations:
+            # Filter out invalid solutions (inf, inf)
+            valid_evaluations = [e for e in all_evaluations if e[0] != float('inf') and e[1] != float('inf')]
+            axis.scatter(
+                [e[0] for e in valid_evaluations], 
+                [e[1] for e in valid_evaluations], 
+                c='gray', alpha=0.3, label='All Solutions (Including Dominated)'
+            )
         
-        axis.legend()
+        # Plot historical Pareto fronts with transparency
+        for i, front in enumerate(all_fronts):
+            axis.scatter(
+                [e[0] for e in front], 
+                [e[1] for e in front],
+                c='blue', alpha=(i+1)/len(all_fronts)*0.5, 
+                edgecolors='none', s=15, label='Historical Fronts' if i == 0 else ""
+            )
+        
+        # Plot current Pareto front
+        current_front = get_pareto_front(population, distance_matrix, n_days, customer_demands, daily_capacity, allowable_days)
+        current_evals = [evaluate_individual(ind, distance_matrix, n_days, customer_demands, daily_capacity, allowable_days)
+                        for ind in current_front]
+        axis.scatter(
+            [data[0] for data in current_evals], 
+            [data[1] for data in current_evals],
+            c='red', s=30, label='Current Pareto Front'
+        )
+        
+        # Ensure labels are unique
+        handles, labels = plt.gca().get_legend_handles_labels()
+        by_label = dict(zip(labels, handles))
+        axis.legend(by_label.values(), by_label.keys())
         plt.draw()
+
 
     
     for gen in range(params['generations']):
-        evaluations = [evaluate_individual(ind, distance_matrix, n_days, customer_demands, daily_capacity)
-                       for ind in population]
+        evaluations = [evaluate_individual(ind, distance_matrix, n_days, customer_demands, daily_capacity, allowable_days)
+               for ind in population]
         
         offspring = []
         for _ in range(params['population_size']):
@@ -259,12 +276,13 @@ def nsga2(params, customer_demands, distance_matrix):
         children = []
         for i in range(0, len(offspring), 2):
             p1, p2 = offspring[i], offspring[i+1] if i+1 < len(offspring) else offspring[i]
-            children.append(mutate(crossover(p1, p2, n_days), params['mutation_rate'], n_days))
+            children.append(mutate(crossover(p1, p2, n_days), params['mutation_rate'], n_days, allowable_days))
         
         # Combine and select next population
         combined = population + children
-        combined_evals = [evaluate_individual(ind, distance_matrix, n_days, customer_demands, daily_capacity)
+        combined_evals = [evaluate_individual(ind, distance_matrix, n_days, customer_demands, daily_capacity, allowable_days)
                           for ind in combined]
+        all_evaluations.extend(combined_evals)  
         
         fronts = non_dominated_sort(combined, combined_evals)
         next_population = []
@@ -284,11 +302,10 @@ def nsga2(params, customer_demands, distance_matrix):
                 break
         
         population = next_population[:params['population_size']]
-        current_front = get_pareto_front(population, distance_matrix, n_days,
-                                        customer_demands, daily_capacity)
-        current_evals = [evaluate_individual(ind, distance_matrix, n_days,
-                                            customer_demands, daily_capacity)
-                        for ind in current_front]
+        current_front = get_pareto_front(population, distance_matrix, n_days, customer_demands, daily_capacity, allowable_days)
+        current_evals = [evaluate_individual(ind, distance_matrix, n_days, customer_demands, daily_capacity, allowable_days)
+                for ind in current_front]
+
         all_fronts.append(current_evals)
         
         # Update plot every N generations
@@ -300,8 +317,7 @@ def nsga2(params, customer_demands, distance_matrix):
     update(params['generations']-1)
     plt.show()
     return population        
-    
-    return population
+
 def print_customer_demands(customer_demands):
     """Print customer IDs and their demands"""
     print("\nCustomer Demands:")
@@ -319,8 +335,8 @@ def print_schedule(individual, n_days):
         customers = sorted(day_assignments.get(day, []))
         print(f"Day {day}: Customers {customers}")
 #--------------------Solution stats-------------------
-def print_solution_metrics(individual, distance_matrix, customer_demands, daily_capacity, n_days):
-    total_dist, max_dist = evaluate_individual(individual, distance_matrix, n_days, customer_demands, daily_capacity)
+def print_solution_metrics(individual, distance_matrix, customer_demands, daily_capacity, n_days, allowable_days):
+    total_dist, max_dist = evaluate_individual(individual, distance_matrix, n_days, customer_demands, daily_capacity, allowable_days)
     valid = total_dist != float('inf')
     
     print(f"\n=== Solution {'VALID' if valid else 'INVALID'} ===")
@@ -359,10 +375,11 @@ print("\nExample Schedules:")
 for idx in [0, len(final_population)//2, -1]:
     print(f"\n=== Solution {idx+1} ===")
     print_schedule(final_population[idx], params['n_days'])
-    print_solution_metrics(final_population[idx], distance_matrix, customer_demands, params['daily_capacity'], params['n_days'])
+    print_solution_metrics(final_population[idx], distance_matrix, customer_demands, params['daily_capacity'], params['n_days'], params['allowable_days'])
 # Plot Pareto front with all parameters
 plot_pareto_front(final_population, 
                  distance_matrix, 
                  params['n_days'],
                  customer_demands,
-                 params['daily_capacity'])
+                 params['daily_capacity'],
+                 params['allowable_days'])
