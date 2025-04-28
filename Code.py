@@ -72,9 +72,6 @@ def evaluate_individual(individual, distance_matrix, n_days, customer_demands, d
     day_customers = defaultdict(list)
     day_demands = defaultdict(int)
     valid = True
-    
-    # First pass: check capacity constraints
-    valid = True
     for cust_idx, days in enumerate(individual):
         # Check 1: Are all assigned days within allowable_days?
         if not set(days).issubset(set(allowable_days[cust_idx])):
@@ -93,7 +90,7 @@ def evaluate_individual(individual, distance_matrix, n_days, customer_demands, d
     
     # Immediately reject invalid solutions
     if not valid:
-        return (float('inf'), float('inf'))  #PENALTY if solution is not valid where demand is greater than daily capacity
+        return (float('inf'), float('inf'))  #PENALTY if solution is not valid where demand is greater than daily capacity, sets it to inf
     
     # Second pass: calculate distances
     total_distance = 0
@@ -243,12 +240,17 @@ def nsga2(params, customer_demands, distance_matrix):
         
         # Plot historical Pareto fronts with transparency
         for i, front in enumerate(all_fronts):
+            alpha_val = (i+1)/len(all_fronts)*0.5
+            is_last = (i == len(all_fronts)-1)
             axis.scatter(
-                [e[0] for e in front], 
+                [e[0] for e in front],
                 [e[1] for e in front],
-                c='blue', alpha=(i+1)/len(all_fronts)*0.5, 
-                edgecolors='none', s=15, label='Historical Fronts' if i == 0 else ""
-            )
+                c='blue',
+                alpha=alpha_val,
+                edgecolors='none',
+                s=15,
+                label='Historical Fronts' if is_last else None
+                )
         
         # Plot current Pareto front
         current_front = get_pareto_front(population, distance_matrix, n_days, customer_demands, daily_capacity, allowable_days)
