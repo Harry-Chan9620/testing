@@ -6,7 +6,7 @@ import pandas as pd
 #For Consistent reproducible results
 random.seed(5)
 np.random.seed(5)
-save_file = False
+save_file = True
 def vpr_file(filename): #reads data from file and extracts nodes [idx,x,y,demand] for distance matrix
     with open(filename, 'r') as f:
         lines = [line.strip() for line in f.readlines() if line.strip()]
@@ -207,7 +207,10 @@ def nsga2(params, customer_demands, distance_matrix):
     daily_capacity = params['daily_capacity']
     data_collection = []
     
-    
+    # Initialize global maxima trackers
+    global_max_total = 0
+    global_max_daily = 0
+    hypervolumes = []  # Track hypervolume per generation
     population = [generate_individual(required_visits, allowable_days) 
                   for _ in range(params['population_size'])]
     
@@ -267,8 +270,29 @@ def nsga2(params, customer_demands, distance_matrix):
     
     for gen in range(params['generations']):
         evaluations = [evaluate_individual(ind, distance_matrix, n_days, customer_demands, daily_capacity, allowable_days)
-                      for ind in population]
-                # Track current generation's data
+                    for ind in population]
+        
+        # Get current Pareto front using existing evaluations
+        fronts = non_dominated_sort(population, evaluations)
+        current_front = [population[i] for i in fronts[0]] if fronts else []
+        current_evals = [evaluations[i] for i in fronts[0]] if fronts else []
+        
+        # Track worst valid solutions across all generations
+        valid_in_gen = [e for e in current_evals if e[0] != float('inf')]
+        if valid_in_gen:
+            current_max_total = max(e[0] for e in valid_in_gen)
+            current_max_daily = max(e[1] for e in valid_in_gen)
+            
+            if current_max_total > global_max_total:
+                global_max_total = current_max_total
+            if current_max_daily > global_max_daily:
+                global_max_daily = current_max_daily
+        
+        # Calculate hypervolume for this generation
+        current_ref_point = (global_max_total * 1.1, global_max_daily * 1.1)
+        valid_front = [e for e in current_evals if e[0] != float('inf')]
+        hv = calculate_hypervolume(valid_front, current_ref_point)
+        hypervolumes.append(hv)          
         for ind, eval_result in zip(population, evaluations):
             total_dist, max_dist = eval_result
             valid = (total_dist != float('inf') and max_dist != float('inf'))
@@ -317,10 +341,6 @@ def nsga2(params, customer_demands, distance_matrix):
                 break
         
         population = next_population[:params['population_size']]
-        current_front = get_pareto_front(population, distance_matrix, n_days, customer_demands, daily_capacity, allowable_days)
-        current_evals = [evaluate_individual(ind, distance_matrix, n_days, customer_demands, daily_capacity, allowable_days)
-                for ind in current_front]
-
         all_fronts.append(current_evals)
         
         # Update plot every N generations
@@ -331,11 +351,8 @@ def nsga2(params, customer_demands, distance_matrix):
     # Final plot
     update(params['generations']-1)
     plt.show()
-    if save_file == True:
-        df = pd.DataFrame(data_collection)
-        df.to_csv('moga_results.csv', index=False)
-        
-    return population, all_fronts, data_collection         
+   
+    return population, all_fronts, data_collection, hypervolumes      
 #HyperVolume
 def calculate_hypervolume(pareto_front, ref_point):
     """Calculate hypervolume for a 2D Pareto front relative to a reference point."""
@@ -392,7 +409,7 @@ params = {
     'filename': 'vrp10.txt',
     'population_size': 100,
     'generations': 50,
-    'mutation_rate': 0.1,
+    'mutation_rate': 0.2,
     'n_days': 10,
     'daily_capacity': 200,
     'required_visits': [1] * 99,
@@ -404,7 +421,7 @@ customer_demands, distance_matrix = vpr_file(params['filename'])
 print_customer_demands(customer_demands)
 
 # Run NSGA-II with parameters
-final_population, all_fronts, data_collection = nsga2(params, customer_demands, distance_matrix)
+final_population, all_fronts, data_collection, hypervolumes = nsga2(params, customer_demands, distance_matrix)
 # Compute hypervolume for each generation
 valid_evaluations = [(e['total_distance'], e['max_daily_distance']) for e in data_collection if e['valid']]
 if valid_evaluations:
@@ -448,6 +465,7 @@ plot_pareto_front(final_population,
                  params['allowable_days'])
 valid_data = [entry for entry in data_collection if entry['valid']]
 first_valid = next((entry for entry in valid_data if entry['generation'] == 0), None)
+last_valid = next((entry for entry in valid_data if entry['generation'] == params['generations'] - 1), None)
 if first_valid:
     print(f"\nGeneration 0 Example Solution:")
     print(f"Total Distance: {first_valid['total_distance']:.2f}")
@@ -456,9 +474,17 @@ if first_valid:
     print(f"Generation 0 (Initial): {hypervolumes[0]:.2f}")
     print(f"Generation {params['generations']} (Final): {hypervolumes[-1]:.2f}")
 
-# Get the last valid solution (Gen 50)
-last_valid = next((entry for entry in valid_data if entry['generation'] == params['generations'] - 1), None)
 if last_valid:
     print(f"\nGeneration {params['generations']} Example Solution:")
     print(f"Total Distance: {last_valid['total_distance']:.2f}")
     print(f"Max Daily Distance: {last_valid['max_daily_distance']:.2f}")
+
+if save_file and hypervolumes:
+        df = pd.DataFrame(data_collection)        
+        # Get total distance from the actual final front
+        filename = (
+            f"moga_mut{params['mutation_rate']:.2f}_"
+            f"hv{hypervolumes[-1]}_"
+            f"dist{last_valid['total_distance']:.0f}.csv"
+        )
+        df.to_csv(filename, index=False)
