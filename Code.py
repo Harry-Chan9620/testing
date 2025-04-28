@@ -100,7 +100,7 @@ def evaluate_individual(individual, distance_matrix, n_days, customer_demands, d
         current = 0
         unvisited = set(customers)
         while unvisited:
-            next_node = min(unvisited, key=lambda x: distance_matrix[current][x])
+            next_node = min(unvisited, key=lambda x: distance_matrix[current][x]) #Picks the nearest node from the unvisited nodes from where it currently is
             route.append(next_node)
             unvisited.remove(next_node)
             current = next_node
@@ -410,13 +410,13 @@ def print_solution_metrics(individual, distance_matrix, customer_demands, daily_
             print(f"Day {day}: {len(day_assignments[day])} customers | Demand: {demand}/{daily_capacity}")
 # Execution
 params = {
-    'filename': 'vrp10.txt',
-    'population_size': 100,
+    'filename': 'vrp9.txt', 
+    'population_size': 75, # set to 50 for vrp8, 75 for vrp9, 100 for vrp10
     'generations': 50,
     'mutation_rate': 0.2,
     'n_days': 10,
     'daily_capacity': 200,
-    'required_visits': [1] * 99,
+    'required_visits': [1] * 99,      #set required_visits to[[1] * 49 ] for vrp8 -----[ [1] * 74 ]for vrp9------- [1] * 99 for vrp10]
     'allowable_days': [list(range(1, 11)) for _ in range(99)]
 }
 
