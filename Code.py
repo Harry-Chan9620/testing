@@ -113,10 +113,10 @@ def evaluate_individual(individual, distance_matrix, n_days, customer_demands, d
 def dominates(a, b):
     return (a[0] <= b[0] and a[1] <= b[1]) and (a[0] < b[0] or a[1] < b[1])
 
-def non_dominated_sort(population, evaluations):
+def non_dominated_sort(population, evaluations): #Note: population is not used here but kept ensure everything else works.
     fronts = [[]]
-    domination_counts = [0] * len(population)
-    dominated_by = [[] for _ in range(len(population))]
+    domination_counts = [0] * len(evaluations)
+    dominated_by = [[] for _ in range(len(evaluations))]
     
     for i, a in enumerate(evaluations):
         for j, b in enumerate(evaluations):
@@ -308,10 +308,12 @@ def nsga2(params, customer_demands, distance_matrix):
         
         offspring = []
         for _ in range(params['population_size']):
+            #randomly picks two individuals from population to do a tournament selection
             candidates = random.sample(range(len(population)), 2)
             a, b = candidates[0], candidates[1]
+            #If two individuals (a) and (b) , checks if a is less than b (compares fitness)
             winner = population[a] if (evaluations[a][0] + evaluations[a][1] < evaluations[b][0] + evaluations[b][1]) else population[b]
-            offspring.append(winner)
+            offspring.append(winner)  #adds the winner to offsping
         
         # Generate children
         children = []
@@ -320,7 +322,7 @@ def nsga2(params, customer_demands, distance_matrix):
             children.append(mutate(crossover(p1, p2, n_days), params['mutation_rate'], n_days, allowable_days))
         
         # Combine and select next population
-        combined = population + children
+        combined = population + children  #Combined is a the population and +offsping
         combined_evals = [evaluate_individual(ind, distance_matrix, n_days, customer_demands, daily_capacity, allowable_days)
                           for ind in combined]
         all_evaluations.extend(combined_evals)  
@@ -480,7 +482,7 @@ if last_valid:
     print(f"\nGeneration {params['generations']} Example Solution:")
     print(f"Total Distance: {last_valid['total_distance']:.2f}")
     print(f"Max Daily Distance: {last_valid['max_daily_distance']:.2f}")
-
+    
 if save_file and hypervolumes:
         df = pd.DataFrame(data_collection)        
         # Get total distance from the actual final front
