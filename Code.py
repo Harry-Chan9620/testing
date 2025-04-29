@@ -2,11 +2,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 import random
 from collections import defaultdict
+import os
 import pandas as pd
 #For Consistent reproducible results
 random.seed(5)
 np.random.seed(5)
-save_file = False
+save_file = True
 def vpr_file(filename): #reads data from file and extracts nodes [idx,x,y,demand] for distance matrix
     with open(filename, 'r') as f:
         lines = [line.strip() for line in f.readlines() if line.strip()]
@@ -409,16 +410,18 @@ def print_solution_metrics(individual, distance_matrix, customer_demands, daily_
         for day in sorted(day_assignments):
             demand = sum(customer_demands[cust-1] for cust in day_assignments[day])
             print(f"Day {day}: {len(day_assignments[day])} customers | Demand: {demand}/{daily_capacity}")
-# Execution
+# Execution and parameters
+population_size = 75
+n_days = 10
 params = {
-    'filename': 'vrp10.txt', 
-    'population_size': 100, # set to 50 for vrp8, 75 for vrp9, 100 for vrp10
-    'generations': 100,
+    'filename': 'vrp9.txt', 
+    'population_size': population_size, # set to 50 for vrp8, 75 for vrp9, 100 for vrp10
+    'generations': 50,
     'mutation_rate': 0.2,
-    'n_days': 10,
+    'n_days': n_days,
     'daily_capacity': 200,
-    'required_visits': [1] * 99,      #set required_visits to[[1] * 49 ] for vrp8 -----[ [1] * 74 ]for vrp9------- [1] * 99 for vrp10]
-    'allowable_days': [list(range(1, 11)) for _ in range(99)]
+    'required_visits': [1] * (population_size-1),      #set required_visits to[[1] * 49 ] for vrp8 -----[ [1] * 74 ]for vrp9------- [1] * 99 for vrp10]
+    'allowable_days': [list(range(1, n_days+1)) for _ in range(population_size-1)]
 }
 
 # Parse data once and reuse
@@ -487,12 +490,14 @@ if last_valid:
 if save_file and hypervolumes:
         df = pd.DataFrame(data_collection)        
         # Get total distance from the actual final front
-        filename = (
+        filename = os.path.join (
+            "Data",
             f"moga_mut{params['mutation_rate']:.2f}_"
             f"hv{hypervolumes[-1]}_"
             f"dist{last_valid['total_distance']:.0f}.csv"
         )
         df.to_csv(filename, index=False)
+"""""
 #Testing purposes and verification
 demands, dist_matrix = vpr_file("test_vrp.txt")
 print(demands)          # Should output [10, 20]
@@ -503,3 +508,4 @@ allowable_days = [[1,2], [3,4]]
 ind = generate_individual(required_visits, allowable_days)
 print(ind)  # e.g., [[2], [4]]
 print(calculate_route_distance([1,2], dist_matrix)) # should print distance between 
+"""
