@@ -1,3 +1,3 @@
 # testing
 The objectives I will be using for this project are
-Minimizing total travel distance and Max tour length (total distance travelled in one period.)
+Minimizing Total Distance Travelled whilst min-maxing and max-min single-day distance with the goal of keeping the longest daily tour as short as possile
