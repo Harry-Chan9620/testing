@@ -7,7 +7,7 @@ import pandas as pd
 #For Consistent reproducible results
 random.seed(5)
 np.random.seed(5)
-save_file = True
+save_file = False
 def vpr_file(filename): #reads data from file and extracts nodes [idx,x,y,demand] for distance matrix
     with open(filename, 'r') as f:
         lines = [line.strip() for line in f.readlines() if line.strip()]
@@ -411,16 +411,16 @@ def print_solution_metrics(individual, distance_matrix, customer_demands, daily_
             demand = sum(customer_demands[cust-1] for cust in day_assignments[day])
             print(f"Day {day}: {len(day_assignments[day])} customers | Demand: {demand}/{daily_capacity}")
 # Execution and parameters
-population_size = 75
+population_size = 100 #set population_size to 50 for vrp8 -----75 ]for vrp9------- 100 for vrp10]
 n_days = 10
 params = {
-    'filename': 'vrp9.txt', 
+    'filename': 'vrp10.txt', 
     'population_size': population_size, # set to 50 for vrp8, 75 for vrp9, 100 for vrp10
     'generations': 50,
-    'mutation_rate': 0.2,
+    'mutation_rate': 0.05,
     'n_days': n_days,
-    'daily_capacity': 200,
-    'required_visits': [1] * (population_size-1),      #set required_visits to[[1] * 49 ] for vrp8 -----[ [1] * 74 ]for vrp9------- [1] * 99 for vrp10]
+    'daily_capacity': 200    ,
+    'required_visits': [1] * (population_size-1),      
     'allowable_days': [list(range(1, n_days+1)) for _ in range(population_size-1)]
 }
 
@@ -481,6 +481,7 @@ if first_valid:
     print("\nHypervolume Summary:")
     print(f"Generation 0 (Initial): {hypervolumes[0]:.2f}")
     print(f"Generation {params['generations']} (Final): {hypervolumes[-1]:.2f}")
+    print(f"Mean Hypervolume: {np.mean(hypervolumes):.2f}")
 
 if last_valid:
     print(f"\nGeneration {params['generations']} Example Solution:")
