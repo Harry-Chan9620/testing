@@ -6,7 +6,7 @@ import pandas as pd
 #For Consistent reproducible results
 random.seed(5)
 np.random.seed(5)
-save_file = True
+save_file = False
 def vpr_file(filename): #reads data from file and extracts nodes [idx,x,y,demand] for distance matrix
     with open(filename, 'r') as f:
         lines = [line.strip() for line in f.readlines() if line.strip()]
@@ -111,14 +111,14 @@ def evaluate_individual(individual, distance_matrix, n_days, customer_demands, d
     return total_distance, max_single_day_distance
 
 def dominates(a, b):
-    return (a[0] <= b[0] and a[1] <= b[1]) and (a[0] < b[0] or a[1] < b[1])
+    return (a[0] <= b[0] and a[1] <= b[1]) and (a[0] < b[0] or a[1] < b[1]) #dominate nodes logic
 
 def non_dominated_sort(population, evaluations): #Note: population is not used here but kept ensure everything else works.
     fronts = [[]]
     domination_counts = [0] * len(evaluations)
     dominated_by = [[] for _ in range(len(evaluations))]
     
-    for i, a in enumerate(evaluations):
+    for i, a in enumerate(evaluations):#goes through evaluations 
         for j, b in enumerate(evaluations):
             if i == j:
                 continue
@@ -327,17 +327,18 @@ def nsga2(params, customer_demands, distance_matrix):
                           for ind in combined]
         all_evaluations.extend(combined_evals)  
         
-        fronts = non_dominated_sort(combined, combined_evals)
+        fronts = non_dominated_sort(combined, combined_evals) #brings the merged population into pareto front.
         next_population = []
         remaining = params['population_size']
         
         for front in fronts:
-            front_inds = [combined[i] for i in front]
-            front_evals = [combined_evals[i] for i in front]
+            front_inds = [combined[i] for i in front]#Current solutions in front
+            front_evals = [combined_evals[i] for i in front] 
             
             if len(next_population) + len(front_inds) <= remaining:
-                next_population.extend(front_inds)
+                next_population.extend(front_inds)#adds front indexes if possible
                 remaining -= len(front_inds)
+                #utilises crowd-distance to select diverse solutions when space is limited.
             else:
                 distances = crowding_distance(front_evals)
                 sorted_front = sorted(zip(front_inds, distances), key=lambda x: -x[1])
@@ -410,9 +411,9 @@ def print_solution_metrics(individual, distance_matrix, customer_demands, daily_
             print(f"Day {day}: {len(day_assignments[day])} customers | Demand: {demand}/{daily_capacity}")
 # Execution
 params = {
-    'filename': 'vrp9.txt', 
-    'population_size': 75, # set to 50 for vrp8, 75 for vrp9, 100 for vrp10
-    'generations': 50,
+    'filename': 'vrp10.txt', 
+    'population_size': 100, # set to 50 for vrp8, 75 for vrp9, 100 for vrp10
+    'generations': 100,
     'mutation_rate': 0.2,
     'n_days': 10,
     'daily_capacity': 200,
@@ -492,3 +493,13 @@ if save_file and hypervolumes:
             f"dist{last_valid['total_distance']:.0f}.csv"
         )
         df.to_csv(filename, index=False)
+#Testing purposes and verification
+demands, dist_matrix = vpr_file("test_vrp.txt")
+print(demands)          # Should output [10, 20]
+print(dist_matrix[1,2]) # Should output 5.0
+
+required_visits = [1, 1]  # 2 customers, each requiring 1 visit
+allowable_days = [[1,2], [3,4]]
+ind = generate_individual(required_visits, allowable_days)
+print(ind)  # e.g., [[2], [4]]
+print(calculate_route_distance([1,2], dist_matrix)) # should print distance between 
