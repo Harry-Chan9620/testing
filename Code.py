@@ -7,6 +7,7 @@ import pandas as pd
 #For Consistent reproducible results
 random.seed(5)
 np.random.seed(5)
+
 save_file = False
 def vpr_file(filename): #reads data from file and extracts nodes [idx,x,y,demand] for distance matrix
     with open(filename, 'r') as f:
@@ -292,7 +293,7 @@ def nsga2(params, customer_demands, distance_matrix):
                 global_max_daily = current_max_daily
         
         # Calculate hypervolume for this generation
-        current_ref_point = (global_max_total * 1.1, global_max_daily * 1.1)
+        current_ref_point = (global_max_total * 1.1, global_max_daily * 1.1) # Used current_ref_point = (3000, 500) to obtain low std 4% for μ
         valid_front = [e for e in current_evals if e[0] != float('inf')]
         hv = calculate_hypervolume(valid_front, current_ref_point)
         hypervolumes.append(hv)          
@@ -350,10 +351,9 @@ def nsga2(params, customer_demands, distance_matrix):
         all_fronts.append(current_evals)
         
         # Update plot every N generations
-        if gen % 5 == 0:  # Plot every 5 generations
+        if gen % 8 == 0:  # Plot every 8 generations
             update(gen)
-            plt.pause(0.5)  # Pause to see updates
-    
+            plt.pause(0.3)  # Pause to see updates
     # Final plot
     update(params['generations']-1)
     plt.show()
@@ -386,7 +386,7 @@ def print_schedule(individual, n_days):
     day_assignments = defaultdict(list)
     for cust_idx, days in enumerate(individual):
         for day in days:
-            day_assignments[day].append(cust_idx + 1)  # Customers start at 1
+            day_assignments[day].append(cust_idx + 1)  
     
     print(f"\nSchedule (Total Days: {n_days}):")
     for day in range(1, n_days + 1):
@@ -411,15 +411,19 @@ def print_solution_metrics(individual, distance_matrix, customer_demands, daily_
             demand = sum(customer_demands[cust-1] for cust in day_assignments[day])
             print(f"Day {day}: {len(day_assignments[day])} customers | Demand: {demand}/{daily_capacity}")
 # Execution and parameters
-population_size = 100 #set population_size to 50 for vrp8 -----75 ]for vrp9------- 100 for vrp10]
+
+population_size = 100
 n_days = 10
+mutation_rates = [0.01, 0.02, 0.03, 0.04, 0.05, 0.06,0.07,0.08,0.09,0.1]   #used in testing at the bottom to run multiple rates iteratively.
+all_hypervolumes = {}  #for testing -- code for testing and collecting results.
+all_pareto_fronts = {}#for testing
 params = {
     'filename': 'vrp10.txt', 
     'population_size': population_size, # set to 50 for vrp8, 75 for vrp9, 100 for vrp10
     'generations': 50,
     'mutation_rate': 0.05,
     'n_days': n_days,
-    'daily_capacity': 200    ,
+    'daily_capacity': 200,
     'required_visits': [1] * (population_size-1),      
     'allowable_days': [list(range(1, n_days+1)) for _ in range(population_size-1)]
 }
@@ -498,7 +502,7 @@ if save_file and hypervolumes:
             f"dist{last_valid['total_distance']:.0f}.csv"
         )
         df.to_csv(filename, index=False)
-"""""
+'''
 #Testing purposes and verification
 demands, dist_matrix = vpr_file("test_vrp.txt")
 print(demands)          # Should output [10, 20]
@@ -509,4 +513,127 @@ allowable_days = [[1,2], [3,4]]
 ind = generate_individual(required_visits, allowable_days)
 print(ind)  # e.g., [[2], [4]]
 print(calculate_route_distance([1,2], dist_matrix)) # should print distance between 
-"""
+'''
+'''
+#TESTING for mutation rates
+
+for Testing in mutation_rates:
+    print(f"\nRunning for mutation rate: {Testing}")
+    print()
+    params = {
+        'filename': 'vrp9.txt',
+        'population_size': population_size,
+        'generations':50,
+        'mutation_rate': Testing,  # Use current mutation rate
+        'n_days': n_days,
+        'daily_capacity': 200,
+        'required_visits': [1] * (population_size-1),
+        'allowable_days': [list(range(1, n_days+1)) for _ in range(population_size-1)]
+    }
+    
+    # Run NSGA-II and store hypervolumes
+    _, _, _, hypervolumes = nsga2(params, customer_demands, distance_matrix)
+    all_hypervolumes[Testing] = hypervolumes
+
+# Plot all mutation rates on one graph
+plt.figure(figsize=(10, 6))
+for Testing in mutation_rates:
+    plt.plot(all_hypervolumes[Testing], 
+             marker='o', 
+             linestyle='-',
+             markersize=4,
+             label=f'Mutation Rate {Testing}')
+
+plt.xlabel('Generation')
+plt.ylabel('Hypervolume')
+plt.title('Hypervolume Progression Across Mutation Rates')
+plt.legend()
+plt.grid(True)
+plt.show()
+'''
+
+'''
+#Plots all pareto fronts into 1 graph
+for mr in mutation_rates:
+    print(f"\nRunning for mutation rate: {mr}")
+    params = {
+        'filename': 'vrp10.txt',
+        'population_size': population_size,
+        'generations': 50,
+        'mutation_rate': mr,
+        'n_days': n_days,
+        'daily_capacity': 200,
+        'required_visits': [1] * (population_size-1),
+        'allowable_days': [list(range(1, n_days+1)) for _ in range(population_size-1)]
+    }
+    
+    # Get final population and extract Pareto front
+    final_population, _, _, _ = nsga2(params, customer_demands, distance_matrix)
+    pareto_front = get_pareto_front(
+        final_population, 
+        distance_matrix, 
+        n_days, 
+        customer_demands, 
+        params['daily_capacity'], 
+        params['allowable_days']
+    )
+    
+    # Store evaluations of the Pareto front
+    pareto_evals = [
+        evaluate_individual(ind, distance_matrix, n_days, customer_demands, 
+                           params['daily_capacity'], params['allowable_days'])
+        for ind in pareto_front
+    ]
+    all_pareto_fronts[mr] = pareto_evals
+
+# Plot all Pareto fronts on one graph
+plt.figure(figsize=(10, 6))
+colors = plt.cm.viridis(np.linspace(0, 1, len(mutation_rates)))  # Color map for rates
+
+for idx, mr in enumerate(mutation_rates):
+    # Filter out invalid solutions (inf, inf)
+    valid_solutions = [
+        (td, md) for td, md in all_pareto_fronts[mr] 
+        if td != float('inf') and md != float('inf')
+    ]
+    
+    if valid_solutions:
+        total_distances = [td for td, _ in valid_solutions]
+        max_distances = [md for _, md in valid_solutions]
+        plt.scatter(
+            total_distances, 
+            max_distances, 
+            c=[colors[idx]] * len(valid_solutions),
+            edgecolors='none',
+            alpha=0.7,
+            label=f'MR={mr}'
+        )
+
+plt.xlabel('Total Distance')
+plt.ylabel('Max Single-Day Distance')
+plt.title('Final Pareto Fronts Across Mutation Rates')
+plt.legend(title='Mutation Rate')
+plt.grid(True)
+plt.show()
+
+
+#Testing for Standard deviation (how different the data is across randomness)
+#to do this, I wrote some code to run the hypervolume and calculate mean, 20 times, the
+hv_results = []
+
+
+for run in range(20):
+        random.seed(run) #hash out random.seed(5) and np.random.seed(5) at the top when running this code.
+        np.random.seed(run)
+    print(f"Run {run+1}")
+    final_population, all_fronts, _, hypervolumes = nsga2(params, customer_demands, distance_matrix)
+    hv_results.append(hypervolumes[-1])
+
+mean_hv = np.mean(hv_results)
+std_hv = np.std(hv_results)
+percent_std = (std_hv / mean_hv) * 100
+
+print(f"Mean HV: {mean_hv:.2f}")
+print(f"Std Dev: {std_hv:.2f} ({percent_std:.1f}%)")
+
+'''
