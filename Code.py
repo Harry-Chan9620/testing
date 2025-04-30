@@ -425,7 +425,7 @@ params = {
     'n_days': n_days,
     'daily_capacity': 200,
     'required_visits': [1] * (population_size-1),      
-    'allowable_days': [list(range(1, n_days+1)) for _ in range(population_size-1)]
+    'allowable_days': [list(range(1, n_days+1)) for _ in range(population_size-1)] #the allowable days that each customer can visit , n_days+1 as it goes from 1 to 10.
 }
 
 # Parse data once and reuse
